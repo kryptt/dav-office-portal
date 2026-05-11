@@ -1,0 +1,39 @@
+[package]
+name = "dav-office-portal"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.10"
+askama = "0.12"
+axum = { version = "0.8", features = ["macros", "multipart"] }
+axum-extra = { version = "0.10", features = ["cookie", "cookie-private"] }
+base64 = "0.22"
+bytes = "1"
+futures-util = "0.3"
+http = "1"
+jsonwebtoken = "9"
+mime_guess = "2"
+sha2 = "0.10"
+prometheus-client = "0.23"
+quick-xml = { version = "0.36", features = ["serialize"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+time = "0.3"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+url = "2"
+
+[dev-dependencies]
+mockito = "1"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"

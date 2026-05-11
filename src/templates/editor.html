@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}} — Office Portal</title>
+<style>
+  html, body, #editor { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #1a1a18; color: #f4f4f2; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 0.875rem; }
+</style>
+<script src="{{DOC_SERVER}}/web-apps/apps/api/documents/api.js"></script>
+</head>
+<body>
+<div id="editor"></div>
+<div id="loading">Loading editor…</div>
+<script>
+  var cfg = {{CONFIG_JSON}};
+  cfg.events = {
+    onAppReady: function() { var l = document.getElementById('loading'); if (l) l.remove(); },
+    onError: function(e) { console.error('OnlyOffice error', e); alert('Editor error: ' + JSON.stringify(e && e.data || e)); },
+  };
+  try {
+    new DocsAPI.DocEditor('editor', cfg);
+  } catch (e) {
+    document.getElementById('loading').textContent = 'Editor failed to load: ' + (e && e.message ? e.message : e);
+  }
+</script>
+</body>
+</html>
