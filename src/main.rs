@@ -8,6 +8,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 mod config;
 mod dav;
 mod file_jwt;
+mod metrics;
 mod oidc;
 mod onlyoffice;
 mod routes;
@@ -52,16 +53,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Key::from(&padded)
     };
 
+    let metrics = Arc::new(metrics::Metrics::new());
+
     let state = routes::AppState {
         config: cfg.clone(),
         oidc: Arc::new(oidc),
         cookie_key: cookie_key.clone(),
+        metrics: Arc::clone(&metrics),
     };
 
     let app = routes::router(state.clone()).layer(
         tower_http::trace::TraceLayer::new_for_http(),
     );
-    let metrics_app = Router::new().route("/healthz", get(healthz));
+    let metrics_app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/metrics", get({
+            let m = Arc::clone(&metrics);
+            move || metrics_route(m)
+        }));
 
     let public_listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     let metrics_listener = tokio::net::TcpListener::bind(cfg.metrics_bind).await?;
@@ -78,6 +87,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn healthz() -> impl IntoResponse {
     "ok"
+}
+
+async fn metrics_route(metrics: Arc<metrics::Metrics>) -> impl IntoResponse {
+    match metrics.encode() {
+        Ok(buf) => (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+            buf,
+        ).into_response(),
+        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "metrics encode failed").into_response(),
+    }
 }
 
 #[cfg(test)]

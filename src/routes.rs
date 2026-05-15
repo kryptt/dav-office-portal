@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 use crate::config::Config;
 use crate::dav::{DavClient, DavEntry};
 use crate::file_jwt::{self, Action};
+use crate::metrics::{self, Metrics};
 use crate::oidc::{AuthState, OidcClient};
 use crate::onlyoffice::{self, Callback, FileKind};
 use crate::session::{COOKIE_NAME, Session};
@@ -30,6 +31,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub oidc: Arc<OidcClient>,
     pub cookie_key: Key,
+    pub metrics: Arc<Metrics>,
 }
 
 impl FromRef<AppState> for Key {
@@ -178,16 +180,21 @@ async fn list_files(
         Some(s) => s,
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
+    let (session, jar) = maybe_refresh_session(&state, session, jar).await;
     let client = match dav_client_for(&state, &session) {
         Ok(c) => c,
         Err(e) => return e,
     };
     let path = q.path.unwrap_or_default();
+    let start = std::time::Instant::now();
     match client.list(&path).await {
-        Ok(entries) => Json(ListResponse { entries }).into_response(),
+        Ok(entries) => {
+            state.metrics.dav_duration.get_or_create(&metrics::DavOpLabels { op: "list" }).observe(start.elapsed().as_secs_f64());
+            (jar, Json(ListResponse { entries })).into_response()
+        }
         Err(e) => {
             tracing::warn!(error=?e, path=%path, "list failed");
-            (StatusCode::BAD_GATEWAY, format!("list failed: {e}")).into_response()
+            (jar, (StatusCode::BAD_GATEWAY, format!("list failed: {e}"))).into_response()
         }
     }
 }
@@ -207,6 +214,7 @@ async fn upload(
         Some(s) => s,
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
+    let (session, jar) = maybe_refresh_session(&state, session, jar).await;
     let client = match dav_client_for(&state, &session) {
         Ok(c) => c,
         Err(e) => return e,
@@ -218,18 +226,20 @@ async fn upload(
         };
         let body = match field.bytes().await {
             Ok(b) => b,
-            Err(e) => return (StatusCode::BAD_REQUEST, format!("read: {e}")).into_response(),
+            Err(e) => return (jar, (StatusCode::BAD_REQUEST, format!("read: {e}"))).into_response(),
         };
         let rel = if dir.is_empty() {
             filename
         } else {
             format!("{}/{}", dir.trim_end_matches('/'), filename)
         };
+        let start = std::time::Instant::now();
         if let Err(e) = client.put_bytes(&rel, body).await {
-            return (StatusCode::BAD_GATEWAY, format!("upload: {e}")).into_response();
+            return (jar, (StatusCode::BAD_GATEWAY, format!("upload: {e}"))).into_response();
         }
+        state.metrics.dav_duration.get_or_create(&metrics::DavOpLabels { op: "put" }).observe(start.elapsed().as_secs_f64());
     }
-    StatusCode::NO_CONTENT.into_response()
+    (jar, StatusCode::NO_CONTENT).into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -246,13 +256,18 @@ async fn mkdir(
         Some(s) => s,
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
+    let (session, jar) = maybe_refresh_session(&state, session, jar).await;
     let client = match dav_client_for(&state, &session) {
         Ok(c) => c,
         Err(e) => return e,
     };
+    let start = std::time::Instant::now();
     match client.mkcol(&body.path).await {
-        Ok(_) => StatusCode::CREATED.into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("mkdir: {e}")).into_response(),
+        Ok(_) => {
+            state.metrics.dav_duration.get_or_create(&metrics::DavOpLabels { op: "mkcol" }).observe(start.elapsed().as_secs_f64());
+            (jar, StatusCode::CREATED).into_response()
+        }
+        Err(e) => (jar, (StatusCode::BAD_GATEWAY, format!("mkdir: {e}"))).into_response(),
     }
 }
 
@@ -271,13 +286,18 @@ async fn rename(
         Some(s) => s,
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
+    let (session, jar) = maybe_refresh_session(&state, session, jar).await;
     let client = match dav_client_for(&state, &session) {
         Ok(c) => c,
         Err(e) => return e,
     };
+    let start = std::time::Instant::now();
     match client.mv(&body.from, &body.to).await {
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("rename: {e}")).into_response(),
+        Ok(_) => {
+            state.metrics.dav_duration.get_or_create(&metrics::DavOpLabels { op: "move" }).observe(start.elapsed().as_secs_f64());
+            (jar, StatusCode::NO_CONTENT).into_response()
+        }
+        Err(e) => (jar, (StatusCode::BAD_GATEWAY, format!("rename: {e}"))).into_response(),
     }
 }
 
@@ -290,13 +310,18 @@ async fn delete(
         Some(s) => s,
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
+    let (session, jar) = maybe_refresh_session(&state, session, jar).await;
     let client = match dav_client_for(&state, &session) {
         Ok(c) => c,
         Err(e) => return e,
     };
+    let start = std::time::Instant::now();
     match client.delete(&body.path).await {
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("delete: {e}")).into_response(),
+        Ok(_) => {
+            state.metrics.dav_duration.get_or_create(&metrics::DavOpLabels { op: "delete" }).observe(start.elapsed().as_secs_f64());
+            (jar, StatusCode::NO_CONTENT).into_response()
+        }
+        Err(e) => (jar, (StatusCode::BAD_GATEWAY, format!("delete: {e}"))).into_response(),
     }
 }
 
@@ -316,6 +341,7 @@ async fn editor(
         Some(s) => s,
         None => return Redirect::to("/oidc/login").into_response(),
     };
+    let (session, _jar) = maybe_refresh_session(&state, session, jar).await;
     let kind = FileKind::from_path(&q.path);
 
     let read_jwt = match file_jwt::mint(
@@ -396,10 +422,12 @@ async fn file_get(
             return StatusCode::FORBIDDEN.into_response();
         }
     };
+    let session = maybe_refresh_session_bare(&state, session).await;
     let client = match dav_client_for(&state, &session) {
         Ok(c) => c,
         Err(e) => return e,
     };
+    let start = std::time::Instant::now();
     let resp = match client.get(&claims.path).await {
         Ok(r) => r,
         Err(e) => {
@@ -419,6 +447,7 @@ async fn file_get(
     if let Some(cl) = resp.headers().get(header::CONTENT_LENGTH) {
         hdrs.insert(header::CONTENT_LENGTH, cl.clone());
     }
+    state.metrics.dav_duration.get_or_create(&metrics::DavOpLabels { op: "get" }).observe(start.elapsed().as_secs_f64());
     let body = Body::from_stream(resp.bytes_stream());
     (StatusCode::OK, hdrs, body).into_response()
 }
@@ -442,15 +471,18 @@ async fn file_callback(
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(error=?e, "callback jwt verify failed");
+            state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "jwt_error" }).inc();
             return (StatusCode::FORBIDDEN, Json(OoCallbackResponse { error: 1 })).into_response();
         }
     };
+    let session = maybe_refresh_session_bare(&state, session).await;
     use crate::onlyoffice::CallbackStatus::*;
     let status = cb.status_enum();
     tracing::info!(?status, path=%claims.path, "onlyoffice callback");
     match status {
         ReadyToSave | Forcesave => {
             let Some(url) = cb.url.as_deref() else {
+                state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "missing_url" }).inc();
                 return Json(OoCallbackResponse { error: 1 }).into_response();
             };
             let http = reqwest::Client::new();
@@ -459,28 +491,38 @@ async fn file_callback(
                     Ok(b) => b,
                     Err(e) => {
                         tracing::warn!(error=?e, "callback fetch body failed");
+                        state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "fetch_error" }).inc();
                         return Json(OoCallbackResponse { error: 1 }).into_response();
                     }
                 },
                 Ok(r) => {
                     tracing::warn!(status=%r.status(), "callback fetch returned non-2xx");
+                    state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "fetch_error" }).inc();
                     return Json(OoCallbackResponse { error: 1 }).into_response();
                 }
                 Err(e) => {
                     tracing::warn!(error=?e, "callback fetch failed");
+                    state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "fetch_error" }).inc();
                     return Json(OoCallbackResponse { error: 1 }).into_response();
                 }
             };
             let client = match dav_client_for(&state, &session) {
                 Ok(c) => c,
-                Err(_) => return Json(OoCallbackResponse { error: 1 }).into_response(),
+                Err(_) => {
+                    state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "dav_error" }).inc();
+                    return Json(OoCallbackResponse { error: 1 }).into_response();
+                }
             };
             if let Err(e) = client.put_bytes(&claims.path, bytes).await {
                 tracing::warn!(error=?e, path=%claims.path, "callback dav put failed");
+                state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "dav_error" }).inc();
                 return Json(OoCallbackResponse { error: 1 }).into_response();
             }
+            state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "saved" }).inc();
         }
-        _ => {}
+        _ => {
+            state.metrics.oo_callbacks.get_or_create(&metrics::CallbackLabels { result: "noop" }).inc();
+        }
     }
     Json(OoCallbackResponse { error: 0 }).into_response()
 }
@@ -490,6 +532,81 @@ async fn file_callback(
 fn load_session(state: &AppState, jar: &PrivateCookieJar) -> Option<Session> {
     let cookie = jar.get(COOKIE_NAME)?;
     Session::decrypt(cookie.value(), &state.config.session_key).ok()
+}
+
+/// If the access token is expired or within 60s of expiry, refresh it.
+/// Returns (refreshed_session, updated_cookie_jar) on success.
+async fn maybe_refresh_session(
+    state: &AppState,
+    session: Session,
+    jar: PrivateCookieJar,
+) -> (Session, PrivateCookieJar) {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    if now < session.access_token_exp - 60 {
+        return (session, jar);
+    }
+    let Some(ref rt) = session.refresh_token else {
+        tracing::warn!(email=%session.email, "token near expiry but no refresh_token");
+        return (session, jar);
+    };
+    state.metrics.session_refreshes.inc();
+    match state.oidc.refresh(rt).await {
+        Ok(tokens) => {
+            let refreshed = Session {
+                sub: tokens.sub,
+                email: tokens.email,
+                name: tokens.name,
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token,
+                access_token_exp: now + tokens.expires_in,
+            };
+            let jar = match refreshed.encrypt(&state.config.session_key) {
+                Ok(v) => {
+                    let cookie = Cookie::build((COOKIE_NAME, v))
+                        .path("/")
+                        .http_only(true)
+                        .secure(true)
+                        .same_site(SameSite::Lax)
+                        .max_age(time::Duration::days(7))
+                        .build();
+                    jar.add(cookie)
+                }
+                Err(_) => jar,
+            };
+            tracing::debug!(email=%refreshed.email, "session refreshed");
+            (refreshed, jar)
+        }
+        Err(e) => {
+            tracing::warn!(error=?e, email=%session.email, "token refresh failed");
+            (session, jar)
+        }
+    }
+}
+
+/// Refresh a session recovered from a file JWT (no cookie to update).
+async fn maybe_refresh_session_bare(state: &AppState, session: Session) -> Session {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    if now < session.access_token_exp - 60 {
+        return session;
+    }
+    let Some(ref rt) = session.refresh_token else {
+        return session;
+    };
+    state.metrics.session_refreshes.inc();
+    match state.oidc.refresh(rt).await {
+        Ok(tokens) => Session {
+            sub: tokens.sub,
+            email: tokens.email,
+            name: tokens.name,
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            access_token_exp: now + tokens.expires_in,
+        },
+        Err(e) => {
+            tracing::warn!(error=?e, "file-jwt session refresh failed");
+            session
+        }
+    }
 }
 
 fn dav_client_for(state: &AppState, session: &Session) -> Result<DavClient, Response> {
