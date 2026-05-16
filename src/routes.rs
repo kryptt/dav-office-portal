@@ -376,9 +376,15 @@ async fn editor(
     let file_url = format!("{base}/api/file/{read_jwt}");
     let callback_url = format!("{base}/api/callback/{write_jwt}");
     let title = q.path.rsplit('/').next().unwrap_or(&q.path).to_string();
-    // Use a stable but per-revision document key. Stalwart's last-modified
-    // would be cleaner; for now hash the path+exp into something deterministic.
-    let document_key = format!("{}-{}", session.sub, write_jwt.chars().take(20).collect::<String>());
+    // Unique-per-open document key. The first ~37 chars of every HS256 JWT
+    // are the constant header, so skip past the first dot to reach the
+    // payload which differs per file/session.
+    let payload_start = write_jwt.find('.').map(|i| i + 1).unwrap_or(0);
+    let document_key = format!(
+        "{}-{}",
+        session.sub,
+        write_jwt[payload_start..].chars().take(20).collect::<String>()
+    );
 
     let editor_cfg = match onlyoffice::build_and_sign(
         &title,
