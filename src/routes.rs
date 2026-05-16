@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use time::OffsetDateTime;
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use sha2::{Digest, Sha256};
+
 use crate::config::Config;
 use crate::dav::{DavClient, DavEntry};
 use crate::file_jwt::{self, Action};
@@ -376,15 +379,8 @@ async fn editor(
     let file_url = format!("{base}/api/file/{read_jwt}");
     let callback_url = format!("{base}/api/callback/{write_jwt}");
     let title = q.path.rsplit('/').next().unwrap_or(&q.path).to_string();
-    // Unique-per-open document key. The first ~37 chars of every HS256 JWT
-    // are the constant header, so skip past the first dot to reach the
-    // payload which differs per file/session.
-    let payload_start = write_jwt.find('.').map(|i| i + 1).unwrap_or(0);
-    let document_key = format!(
-        "{}-{}",
-        session.sub,
-        write_jwt[payload_start..].chars().take(20).collect::<String>()
-    );
+    let key_hash = Sha256::digest(format!("{}:{}:{}", session.sub, q.path, read_jwt));
+    let document_key = URL_SAFE_NO_PAD.encode(&key_hash[..16]);
 
     let editor_cfg = match onlyoffice::build_and_sign(
         &title,
