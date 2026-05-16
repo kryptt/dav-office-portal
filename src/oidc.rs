@@ -136,7 +136,9 @@ impl OidcClient {
         let token_resp: TokenResponse = serde_json::from_slice(&body_bytes)
             .map_err(|e| OidcError::Token(format!("parse: {e}")))?;
 
-        let claims = extract_claims_unverified(&token_resp.id_token)?;
+        let id_token = token_resp.id_token
+            .ok_or_else(|| OidcError::Token("missing id_token in authorization response".into()))?;
+        let claims = extract_claims_unverified(&id_token)?;
         Ok(Tokens {
             access_token: token_resp.access_token,
             refresh_token: token_resp.refresh_token,
@@ -147,7 +149,16 @@ impl OidcClient {
         })
     }
 
-    pub async fn refresh(&self, refresh_token: &str) -> Result<Tokens, OidcError> {
+    /// Refresh an access token. Per OIDC Core §12.2 the provider MAY omit
+    /// `id_token` from the refresh response, so the caller supplies fallback
+    /// identity fields from the existing session.
+    pub async fn refresh(
+        &self,
+        refresh_token: &str,
+        fallback_sub: &str,
+        fallback_email: &str,
+        fallback_name: Option<&str>,
+    ) -> Result<Tokens, OidcError> {
         let form = [
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token),
@@ -172,14 +183,24 @@ impl OidcClient {
         }
         let token_resp: TokenResponse = serde_json::from_slice(&body_bytes)
             .map_err(|e| OidcError::Token(format!("parse: {e}")))?;
-        let claims = extract_claims_unverified(&token_resp.id_token)?;
+        let (sub, email, name) = match token_resp.id_token {
+            Some(ref id_token) => {
+                let claims = extract_claims_unverified(id_token)?;
+                (claims.sub, claims.email.unwrap_or_default(), claims.name)
+            }
+            None => (
+                fallback_sub.to_string(),
+                fallback_email.to_string(),
+                fallback_name.map(|s| s.to_string()),
+            ),
+        };
         Ok(Tokens {
             access_token: token_resp.access_token,
             refresh_token: token_resp.refresh_token,
             expires_in: token_resp.expires_in.unwrap_or(3600),
-            sub: claims.sub,
-            email: claims.email.unwrap_or_default(),
-            name: claims.name,
+            sub,
+            email,
+            name,
         })
     }
 }
@@ -198,7 +219,8 @@ struct TokenResponse {
     refresh_token: Option<String>,
     #[serde(default)]
     expires_in: Option<i64>,
-    id_token: String,
+    #[serde(default)]
+    id_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]

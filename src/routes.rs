@@ -552,7 +552,7 @@ async fn maybe_refresh_session(
         return (session, jar);
     };
     state.metrics.session_refreshes.inc();
-    match state.oidc.refresh(rt).await {
+    match state.oidc.refresh(rt, &session.sub, &session.email, session.name.as_deref()).await {
         Ok(tokens) => {
             let refreshed = Session {
                 sub: tokens.sub,
@@ -595,7 +595,7 @@ async fn maybe_refresh_session_bare(state: &AppState, session: Session) -> Sessi
         return session;
     };
     state.metrics.session_refreshes.inc();
-    match state.oidc.refresh(rt).await {
+    match state.oidc.refresh(rt, &session.sub, &session.email, session.name.as_deref()).await {
         Ok(tokens) => Session {
             sub: tokens.sub,
             email: tokens.email,
