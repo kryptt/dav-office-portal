@@ -405,7 +405,32 @@ async fn editor(
         .replace("{{TITLE}}", &html_escape(&title))
         .replace("{{DOC_SERVER}}", docs_url)
         .replace("{{CONFIG_JSON}}", &cfg_json);
-    Html(html).into_response()
+    let mut resp = Html(html).into_response();
+    // CSP locks the editor page down to its own origin plus the OnlyOffice
+    // Document Server it loads api.js from and embeds in an iframe.
+    // `'unsafe-inline'` on style/script covers the inline editor bootstrap
+    // and OnlyOffice's own inline DocsAPI calls; tighten later if OO ships
+    // hashable scripts.
+    let csp = csp_for_editor(docs_url);
+    if let Ok(v) = HeaderValue::from_str(&csp) {
+        resp.headers_mut().insert(header::CONTENT_SECURITY_POLICY, v);
+    }
+    resp
+}
+
+fn csp_for_editor(docs_url: &str) -> String {
+    format!(
+        "default-src 'self'; \
+         frame-src {docs}; \
+         script-src 'self' 'unsafe-inline' {docs}; \
+         style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data: {docs}; \
+         connect-src 'self' {docs}; \
+         font-src 'self' data:; \
+         base-uri 'self'; \
+         form-action 'self'",
+        docs = docs_url
+    )
 }
 
 async fn file_get(
@@ -663,6 +688,14 @@ mod tests {
     fn callback_response_serializes() {
         let s = serde_json::to_string(&OoCallbackResponse { error: 0 }).unwrap();
         assert_eq!(s, r#"{"error":0}"#);
+    }
+
+    #[test]
+    fn csp_lists_docs_origin_for_frame_and_script() {
+        let csp = csp_for_editor("https://office-docs.hr-home.xyz");
+        assert!(csp.contains("frame-src https://office-docs.hr-home.xyz"));
+        assert!(csp.contains("script-src 'self' 'unsafe-inline' https://office-docs.hr-home.xyz"));
+        assert!(csp.contains("default-src 'self'"));
     }
 }
 

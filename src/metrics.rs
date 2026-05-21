@@ -25,8 +25,10 @@ impl Metrics {
         let mut registry = Registry::default();
 
         let http_requests = Family::default();
+        // prometheus-client auto-appends `_total` to counter names — don't
+        // include the suffix here or it ends up doubled in the output.
         registry.register(
-            "office_portal_http_requests_total",
+            "office_portal_http_requests",
             "HTTP requests by route and status",
             http_requests.clone(),
         );
@@ -43,14 +45,14 @@ impl Metrics {
 
         let oo_callbacks = Family::default();
         registry.register(
-            "office_portal_oo_callbacks_total",
+            "office_portal_oo_callbacks",
             "OnlyOffice callback results",
             oo_callbacks.clone(),
         );
 
         let session_refreshes = Counter::default();
         registry.register(
-            "office_portal_session_refreshes_total",
+            "office_portal_session_refreshes",
             "OIDC token refresh attempts",
             session_refreshes.clone(),
         );
