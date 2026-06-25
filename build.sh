@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REGISTRY=registry.hr-home.xyz
+REGISTRY="${REGISTRY:-ghcr.io}"
 OWNER=kryptt
 APP=dav-office-portal
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')

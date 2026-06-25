@@ -101,7 +101,7 @@ mod tests {
     fn session() -> Session {
         Session {
             sub: "u1".into(),
-            email: "rhansen@fida.finance".into(),
+            email: "user@example.com".into(),
             name: None,
             access_token: "at".into(),
             refresh_token: None,
@@ -117,7 +117,7 @@ mod tests {
         let tok = mint(&s, "/dav/file/x.docx", Action::Write, 60, &jk, &sk).unwrap();
         let (claims, recovered) = verify(&tok, Action::Write, &jk, &sk).unwrap();
         assert_eq!(claims.path, "/dav/file/x.docx");
-        assert_eq!(claims.email, "rhansen@fida.finance");
+        assert_eq!(claims.email, "user@example.com");
         assert_eq!(recovered.access_token, "at");
     }
 

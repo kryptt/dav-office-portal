@@ -228,7 +228,7 @@ mod tests {
             "https://office.example/api/file/JWT",
             "https://office.example/api/callback/JWT",
             "user-1",
-            "Rodolfo",
+            "Test User",
             secret,
         )
         .unwrap();

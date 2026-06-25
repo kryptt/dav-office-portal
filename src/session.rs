@@ -88,8 +88,8 @@ mod tests {
     fn sample() -> Session {
         Session {
             sub: "abc".into(),
-            email: "rhansen@fida.finance".into(),
-            name: Some("Rodolfo".into()),
+            email: "user@example.com".into(),
+            name: Some("Test User".into()),
             access_token: "at".into(),
             refresh_token: Some("rt".into()),
             access_token_exp: 9_999_999_999,
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn email_domain_extracts() {
-        assert_eq!(sample().email_domain(), Some("fida.finance"));
+        assert_eq!(sample().email_domain(), Some("example.com"));
     }
 
     #[test]

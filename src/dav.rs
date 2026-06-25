@@ -319,22 +319,22 @@ mod tests {
     #[test]
     fn url_for_handles_root_and_subpath() {
         let c = DavClient::new(
-            Url::parse("https://dav.fida.finance").unwrap(),
-            "rhansen@fida.finance",
+            Url::parse("https://dav.example.com").unwrap(),
+            "user@example.com",
             "t".into(),
         );
         assert_eq!(
             c.url_for("").unwrap().as_str(),
-            "https://dav.fida.finance/dav/file/rhansen@fida.finance/"
+            "https://dav.example.com/dav/file/user@example.com/"
         );
         assert_eq!(
             c.url_for("docs/q4.docx").unwrap().as_str(),
-            "https://dav.fida.finance/dav/file/rhansen@fida.finance/docs/q4.docx"
+            "https://dav.example.com/dav/file/user@example.com/docs/q4.docx"
         );
         // Leading slash on rel is tolerated
         assert_eq!(
             c.url_for("/docs").unwrap().as_str(),
-            "https://dav.fida.finance/dav/file/rhansen@fida.finance/docs"
+            "https://dav.example.com/dav/file/user@example.com/docs"
         );
     }
 
@@ -343,11 +343,11 @@ mod tests {
         let xml = r#"<?xml version="1.0" encoding="utf-8"?>
 <D:multistatus xmlns:D="DAV:">
   <D:response>
-    <D:href>/dav/file/rhansen@fida.finance/</D:href>
+    <D:href>/dav/file/user@example.com/</D:href>
     <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:propstat>
   </D:response>
   <D:response>
-    <D:href>/dav/file/rhansen@fida.finance/q4.docx</D:href>
+    <D:href>/dav/file/user@example.com/q4.docx</D:href>
     <D:propstat><D:prop>
       <D:displayname>q4.docx</D:displayname>
       <D:resourcetype/>
@@ -357,13 +357,13 @@ mod tests {
     </D:prop></D:propstat>
   </D:response>
   <D:response>
-    <D:href>/dav/file/rhansen@fida.finance/reports/</D:href>
+    <D:href>/dav/file/user@example.com/reports/</D:href>
     <D:propstat><D:prop>
       <D:resourcetype><D:collection/></D:resourcetype>
     </D:prop></D:propstat>
   </D:response>
 </D:multistatus>"#;
-        let user_root = "/dav/file/rhansen@fida.finance/";
+        let user_root = "/dav/file/user@example.com/";
         let entries = parse_propfind(xml, user_root).unwrap();
         assert_eq!(entries.len(), 2);
         let doc = entries.iter().find(|e| e.path == "q4.docx").unwrap();
@@ -379,7 +379,7 @@ mod tests {
         let xml = r#"<?xml version="1.0" encoding="utf-8"?>
 <D:multistatus xmlns:D="DAV:">
   <D:response>
-    <D:href>/dav/file/rhansen%40fida.finance/q4.docx</D:href>
+    <D:href>/dav/file/user%40example.com/q4.docx</D:href>
     <D:propstat><D:prop>
       <D:displayname>q4.docx</D:displayname>
       <D:resourcetype/>
@@ -387,7 +387,7 @@ mod tests {
     </D:prop></D:propstat>
   </D:response>
 </D:multistatus>"#;
-        let entries = parse_propfind(xml, "/dav/file/rhansen@fida.finance/").unwrap();
+        let entries = parse_propfind(xml, "/dav/file/user@example.com/").unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, "q4.docx");
     }

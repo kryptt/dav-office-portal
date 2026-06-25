@@ -28,8 +28,8 @@ Environment variables (see `src/config.rs` for the canonical list):
 |---|---|---|
 | `BIND_ADDR` | `0.0.0.0:3000` | Listen address (public) |
 | `METRICS_ADDR` | `0.0.0.0:9090` | Listen address (Prometheus + health) |
-| `PUBLIC_BASE_URL` | (required) | Origin the browser uses to reach the portal (e.g. `https://office.hr-home.xyz`) |
-| `OIDC_ISSUER` | `https://stalwart.hr-home.xyz` | OIDC provider |
+| `PUBLIC_BASE_URL` | (required) | Origin the browser uses to reach the portal (e.g. `https://office.example.com`) |
+| `OIDC_ISSUER` | `https://auth.example.com` | OIDC provider |
 | `OIDC_CLIENT_ID` | `office-portal` | OIDC client id |
 | `OIDC_CLIENT_SECRET` | (required) | OIDC client secret |
 | `OO_DOCUMENT_SERVER_URL` | (required) | OnlyOffice Document Server origin (browser-side) |

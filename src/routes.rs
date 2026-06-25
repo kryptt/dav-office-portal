@@ -692,9 +692,9 @@ mod tests {
 
     #[test]
     fn csp_lists_docs_origin_for_frame_and_script() {
-        let csp = csp_for_editor("https://office-docs.hr-home.xyz");
-        assert!(csp.contains("frame-src https://office-docs.hr-home.xyz"));
-        assert!(csp.contains("script-src 'self' 'unsafe-inline' https://office-docs.hr-home.xyz"));
+        let csp = csp_for_editor("https://office-docs.example.com");
+        assert!(csp.contains("frame-src https://office-docs.example.com"));
+        assert!(csp.contains("script-src 'self' 'unsafe-inline' https://office-docs.example.com"));
         assert!(csp.contains("default-src 'self'"));
     }
 }

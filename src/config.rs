@@ -21,7 +21,7 @@ impl Config {
         let bind = env_or("BIND_ADDR", "0.0.0.0:3000").parse()?;
         let metrics_bind = env_or("METRICS_ADDR", "0.0.0.0:9090").parse()?;
         let public_base_url = parse_url(&require_env("PUBLIC_BASE_URL")?)?;
-        let oidc_issuer = parse_url(&env_or("OIDC_ISSUER", "https://stalwart.hr-home.xyz"))?;
+        let oidc_issuer = parse_url(&env_or("OIDC_ISSUER", "https://auth.example.com"))?;
         let oidc_client_id = env_or("OIDC_CLIENT_ID", "office-portal");
         let oidc_client_secret = require_env("OIDC_CLIENT_SECRET")?;
         let oo_document_server_url = parse_url(&require_env("OO_DOCUMENT_SERVER_URL")?)?;
@@ -118,18 +118,18 @@ mod tests {
         let cfg = Config {
             bind: "0.0.0.0:3000".parse().unwrap(),
             metrics_bind: "0.0.0.0:9090".parse().unwrap(),
-            public_base_url: Url::parse("https://office.hr-home.xyz").unwrap(),
-            oidc_issuer: Url::parse("https://stalwart.hr-home.xyz").unwrap(),
+            public_base_url: Url::parse("https://office.example.com").unwrap(),
+            oidc_issuer: Url::parse("https://auth.example.com").unwrap(),
             oidc_client_id: "office-portal".into(),
             oidc_client_secret: "x".into(),
-            oo_document_server_url: Url::parse("https://docs.hr-home.xyz").unwrap(),
+            oo_document_server_url: Url::parse("https://docs.example.com").unwrap(),
             oo_jwt_secret: "x".into(),
             file_jwt_key: [0u8; 32],
             session_key: [0u8; 32],
             dav_base_url_template: "https://dav.{domain}".into(),
         };
-        let url = cfg.dav_base_url("fida.finance").unwrap();
-        assert_eq!(url.as_str(), "https://dav.fida.finance/");
+        let url = cfg.dav_base_url("example.com").unwrap();
+        assert_eq!(url.as_str(), "https://dav.example.com/");
     }
 
     #[test]
